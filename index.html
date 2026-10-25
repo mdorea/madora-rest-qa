@@ -876,8 +876,22 @@ body.modo-tela-qr #app, body.modo-tela-qr #tela-login { display: none !important
             </div>
           </div>
           <div class="painel espaco">
+            <h3>🏢 Empresa e assinaturas</h3>
+            <p class="suave peq">Sai no comprovante semanal: quem assina pela empresa assina em nome do restaurante, com o CNPJ.</p>
+            <label class="rotulo" for="pe-razao">Razão social</label><input class="campo" id="pe-razao" maxlength="120">
+            <div class="grade g2" style="gap:10px">
+              <div><label class="rotulo" for="pe-fantasia">Nome fantasia</label><input class="campo" id="pe-fantasia" maxlength="120"></div>
+              <div><label class="rotulo" for="pe-cnpj">CNPJ</label><input class="campo" id="pe-cnpj" maxlength="18" inputmode="numeric" placeholder="00.000.000/0000-00"></div>
+            </div>
+            <div class="modal-acoes"><button class="btn btn-prim btn-peq" id="pe-salvar">Salvar empresa</button></div>
+            <div style="border-top:1px solid var(--linha);margin-top:14px;padding-top:12px">
+              <label class="rotulo" for="pe-meu-cpf">Seu CPF (sai na sua assinatura pelo restaurante)</label>
+              <div class="linha"><input class="campo" id="pe-meu-cpf" style="flex:1" maxlength="14" inputmode="numeric" placeholder="000.000.000-00"><button class="btn btn-claro btn-peq" id="pe-meu-cpf-salvar">Salvar CPF</button></div>
+            </div>
+          </div>
+          <div class="painel espaco">
             <h3>👥 Funcionárias</h3>
-            <p class="suave peq">A função aparece no comprovante semanal. Para mudar senha ou desativar, use Administração → Usuários e acessos.</p>
+            <p class="suave peq">A função e o CPF aparecem no comprovante semanal. Para mudar senha ou desativar, use Administração → Usuários e acessos.</p>
             <div id="pt-pessoas"></div>
             <button class="btn btn-claro btn-peq" id="pt-nova-func" style="margin-top:10px">＋ Nova funcionária</button>
           </div>
@@ -3155,6 +3169,20 @@ module.exports = QRCode;
   'use strict';
   const C = (typeof module !== 'undefined' && module.exports) ? require('./calculo.js') : raiz.Calculo;
   const erro = (m) => { const e = new Error(m); e.amigavel = true; return e; };
+  /** CPF: só os números, com os dígitos verificadores certos ('' = não informado) */
+  function cpfLimpo(t) {
+    const d = String(t || '').replace(/\D/g, '');
+    if (!d) return '';
+    let ok = d.length === 11 && !/^(\d)\1{10}$/.test(d);
+    for (let k = 9; ok && k <= 10; k++) {
+      let s = 0;
+      for (let i = 0; i < k; i++) s += Number(d[i]) * (k + 1 - i);
+      const r = (s * 10) % 11 % 10;
+      ok = r === Number(d[k]);
+    }
+    if (!ok) throw erro('CPF inválido: ' + t + '. Confira os números.');
+    return d;
+  }
   const ehMes = (s) => typeof s === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(s);
 
   function criarServidor(db, opcoes) {
@@ -3436,6 +3464,8 @@ module.exports = QRCode;
       async pontoLiberarHoje(d) { await db.rpc('ponto_liberar_hoje', { p_liberar: !!d.liberar, p_nav: nav() }); return true; },
       async pontoFuncao(d) { await db.rpc('ponto_salvar_funcao', { p_usuario: d.usuario, p_funcao: d.funcao || '', p_nav: nav() }); return true; },
       async pontoSemana(d) { await db.rpc('ponto_semana', { p_usuario: d.usuario, p_inicio: d.inicio, p_acao: d.acao, p_codigo: d.codigo || '', p_nav: nav() }); return true; },
+      async pontoEmpresa(d) { await db.rpc('ponto_salvar_empresa', { p: { razao: d.razao || '', fantasia: d.fantasia || '', cnpj: d.cnpj || '' }, p_nav: nav() }); return true; },
+      async pontoCpf(d) { return db.rpc('ponto_salvar_cpf', { p_usuario: d.usuario, p_cpf: cpfLimpo(d.cpf), p_nav: nav() }); },
       async pontoPermissao(d) { await db.rpc('ponto_permissao', { p_usuario: d.usuario, p_pode: !!d.pode, p_nav: nav() }); return true; },
 
       // ---------------- avisos (sininho e tela travada)
@@ -3463,15 +3493,16 @@ module.exports = QRCode;
           if (!email && func) email = (String(d.login || 'func').toLowerCase().replace(/[^a-z0-9._-]/g, '') || 'func') + '.' + Math.random().toString(36).slice(2, 7) + '@ponto.invalid';
           if (!/^[^@\s]{1,64}@[^@\s]{1,190}\.[^@\s]{2,}$/.test(email)) throw erro('E-mail inválido.');
           if (typeof d.senha !== 'string' || d.senha.length < 8 || !/[A-Za-z]/.test(d.senha) || !/\d/.test(d.senha)) throw erro('Senha inicial: 8+ caracteres, com letras e números.');
+          const cpf = cpfLimpo(d.cpf);
           const r = await db.funcao('usuarios', { acao: 'criar', email, senha: d.senha, login: d.login || '', nome: d.nome || '', papel: d.papel === 'admin' ? 'admin' : 'socio' });
-          if (func || d.funcao) {
+          if (func || d.funcao || cpf) {
             const id = r && r.id;
-            if (!id) throw erro('O acesso foi criado, mas não consegui marcar como funcionário. Abra o usuário e mude o papel.');
-            await db.rpc('salvar_usuario', { p: { id, papel: func ? 'funcionario' : (d.papel === 'admin' ? 'admin' : 'socio'), funcao: d.funcao || '' }, p_nav: nav() });
+            if (!id) throw erro('O acesso foi criado, mas não consegui completar o cadastro. Abra o usuário e confira o papel e o CPF.');
+            await db.rpc('salvar_usuario', { p: { id, papel: func ? 'funcionario' : (d.papel === 'admin' ? 'admin' : 'socio'), funcao: d.funcao || '', cpf }, p_nav: nav() });
           }
           return true;
         }
-        await db.rpc('salvar_usuario', { p: { id: d.id, nome: d.nome, login: d.login, papel: d.papel, ativo: d.ativo, desbloquear: !!d.desbloquear, funcao: d.funcao === undefined ? undefined : d.funcao }, p_nav: nav() });
+        await db.rpc('salvar_usuario', { p: { id: d.id, nome: d.nome, login: d.login, papel: d.papel, ativo: d.ativo, desbloquear: !!d.desbloquear, funcao: d.funcao === undefined ? undefined : d.funcao, cpf: d.cpf === undefined ? undefined : cpfLimpo(d.cpf) }, p_nav: nav() });
         if (d.senha) {
           if (d.senha.length < 8 || !/[A-Za-z]/.test(d.senha) || !/\d/.test(d.senha)) throw erro('Nova senha: 8+ caracteres, com letras e números.');
           await db.funcao('usuarios', { acao: 'senha', id: d.id, senha: d.senha });
@@ -5097,6 +5128,7 @@ function editarUsuario(u, papelInicial) {
     <label class="rotulo">Usuário (o que a pessoa digita para entrar)</label><input class="campo" id="u-login" value="${u ? esc(u.login) : ''}" autocapitalize="none" spellcheck="false" placeholder="ex.: joao">
     <label class="rotulo">Papel</label><select class="campo" id="u-papel" ${eu ? 'disabled' : ''}><option value="socio" ${papel0 === 'socio' ? 'selected' : ''}>Sócio — vê e lança tudo, sem administração</option><option value="admin" ${papel0 === 'admin' ? 'selected' : ''}>Administrador — tudo + usuários e registros</option><option value="funcionario" ${papel0 === 'funcionario' ? 'selected' : ''}>Funcionário(a) — só bate o ponto e vê o próprio histórico</option></select>
     <div id="u-funcao-box"><label class="rotulo">Função (aparece no comprovante do ponto)</label><input class="campo" id="u-funcao" maxlength="60" value="${u ? esc(u.funcao || '') : ''}" placeholder="ex.: Atendente, Cozinheira"></div>
+    <label class="rotulo">CPF (aparece no comprovante do ponto)</label><input class="campo" id="u-cpf" maxlength="14" inputmode="numeric" value="${u && u.cpf ? esc(fmtCpf(u.cpf)) : ''}" placeholder="000.000.000-00">
     <label class="rotulo">${u ? 'Nova senha (deixe em branco para manter)' : 'Senha inicial (8+ caracteres, letras e números)'}</label><input class="campo" id="u-senha" type="text" autocomplete="off">
     ${u && !eu ? `<label class="chk"><input type="checkbox" id="u-ativo" ${u.ativo ? 'checked' : ''}> Acesso ativo</label>` : ''}
     <p class="msg-erro" id="u-erro"></p>
@@ -5110,6 +5142,7 @@ function editarUsuario(u, papelInicial) {
       if (!u) $('#u-email-rot', m).textContent = f ? 'E-mail (opcional para funcionário: ela entra só com usuário e senha)' : 'E-mail da pessoa';
     };
     $('#u-papel', m).onchange = papelMudou; papelMudou();
+    mascaraDoc($('#u-cpf', m), 'cpf');
     setTimeout(() => (u ? $('#u-nome-i', m) : $(papel0 === 'funcionario' ? '#u-nome-i' : '#u-email', m)).focus(), 40);
     if (!u) { // sugere o usuário a partir do primeiro nome
       let mexeu = false;
@@ -5119,10 +5152,11 @@ function editarUsuario(u, papelInicial) {
     const salvar = async (extra) => {
       const d = Object.assign({ id: u ? u.id : null, email: $('#u-email', m).value, nome: $('#u-nome-i', m).value, login: $('#u-login', m).value, papel: $('#u-papel', m).value }, extra || {});
       if (d.papel === 'funcionario') d.funcao = $('#u-funcao', m).value;
+      d.cpf = $('#u-cpf', m).value;
       if ($('#u-senha', m).value) d.senha = $('#u-senha', m).value;
       if ($('#u-ativo', m)) d.ativo = $('#u-ativo', m).checked;
       if (eu) d.papel = 'admin';
-      try { await api('salvarUsuario', d); fecharModal(); toast('Usuário salvo.', 'ok'); if (est.pagina === 'ponto') carregarPontoAdmin(true); else carregarUsuarios(); } catch (e) { erroEm(m, '#u-erro', e.message); }
+      try { await api('salvarUsuario', d); if (eu) est.usuario.cpf = String(d.cpf || '').replace(/\D/g, ''); fecharModal(); toast('Usuário salvo.', 'ok'); if (est.pagina === 'ponto') carregarPontoAdmin(true); else carregarUsuarios(); } catch (e) { erroEm(m, '#u-erro', e.message); }
     };
     $('[data-a=s]', m).onclick = () => salvar();
     if ($('[data-a=desb]', m)) $('[data-a=desb]', m).onclick = () => salvar({ desbloquear: true });
@@ -5326,6 +5360,19 @@ const PT_TIPOS = { esqueci_entrada: 'Esqueceu a entrada', esqueci_saida: 'Esquec
 const PT_DIAS = [[1, 'Segunda'], [2, 'Terça'], [3, 'Quarta'], [4, 'Quinta'], [5, 'Sexta'], [6, 'Sábado'], [7, 'Domingo']];
 const ehFunc = () => est.usuario && est.usuario.papel === 'funcionario';
 const podeGerirPonto = () => est.usuario && (est.usuario.papel === 'admin' || (est.usuario.papel === 'socio' && est.usuario.podePonto));
+/** 52998224725 → 529.982.247-25 · 11222333000181 → 11.222.333/0001-81 */
+function fmtCpf(d) { d = String(d || '').replace(/\D/g, ''); return d.length === 11 ? d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4') : d; }
+function fmtCnpj(d) { d = String(d || '').toUpperCase().replace(/[^0-9A-Z]/g, ''); return d.length === 14 ? d.replace(/^(.{2})(.{3})(.{3})(.{4})(.{2})$/, '$1.$2.$3/$4-$5') : d; }
+// máscara enquanto digita
+function mascaraDoc(inp, tipo) {
+  inp.addEventListener('input', () => {
+    const d = tipo === 'cnpj' ? inp.value.toUpperCase().replace(/[^0-9A-Z]/g, '').slice(0, 14) : inp.value.replace(/\D/g, '').slice(0, 11);
+    const f = tipo === 'cnpj' ? [[2, '.'], [5, '.'], [8, '/'], [12, '-']] : [[3, '.'], [6, '.'], [9, '-']];
+    let r = ''; for (let i = 0; i < d.length; i++) { const x = f.find((p) => p[0] === i); r += (x ? x[1] : '') + d[i]; }
+    inp.value = r;
+  });
+}
+const empresaPonto = () => Object.assign({ razao: '', fantasia: 'Restaurante Madora', cnpj: '' }, (est.pt.dados && est.pt.dados.cfg && est.pt.dados.cfg.empresa) || {});
 const dBR = (d) => (d ? d.slice(8, 10) + '/' + d.slice(5, 7) : '');
 const capital = (t) => String(t || '').charAt(0).toUpperCase() + String(t || '').slice(1);
 function diaLongo(d) { return capital(Ponto.SEMANA[Ponto.diaSemana(d)]) + ', ' + Number(d.slice(8, 10)) + ' de ' + MESES[Number(d.slice(5, 7)) - 1]; }
@@ -5788,9 +5835,18 @@ function desenharConfigPonto() {
   $('#pt-liberar').textContent = D.liberadoHoje ? '🔒 Tirar a liberação de hoje' : '🔓 Liberar o ponto hoje o dia todo';
   $('#pt-liberar-txt').textContent = D.liberadoHoje ? 'Hoje o ponto está liberado a qualquer hora (mesmo fora do horário ou feriado).' : 'Use num dia excepcional: evento, feriado com trabalho, hora extra depois do horário.';
   // funcionárias
-  $('#pt-pessoas').innerHTML = D.pessoas.length ? D.pessoas.map((x) => `<div class="cfg-l" style="gap:10px"><span style="min-width:110px"><b>${esc(x.nome)}</b><div class="suave peq">usuário: ${esc(x.login)}${x.ativo ? '' : ' · desativada'}</div></span>
-      <input class="campo" style="flex:1;min-width:120px" data-funcao="${esc(x.id)}" value="${esc(x.funcao)}" placeholder="Função (ex.: Atendente)" maxlength="60"></div>`).join('')
+  $('#pt-pessoas').innerHTML = D.pessoas.length ? D.pessoas.map((x) => `<div class="cfg-l" style="gap:10px;flex-wrap:wrap"><span style="min-width:110px"><b>${esc(x.nome)}</b><div class="suave peq">usuário: ${esc(x.login)}${x.ativo ? '' : ' · desativada'}</div></span>
+      <span class="linha" style="flex:1;min-width:220px;flex-wrap:nowrap"><input class="campo" style="flex:1;min-width:0" data-funcao="${esc(x.id)}" value="${esc(x.funcao)}" placeholder="Função (ex.: Atendente)" maxlength="60" title="Função">
+      <input class="campo" style="flex:1;min-width:0" data-cpf="${esc(x.id)}" value="${esc(fmtCpf(x.cpf))}" placeholder="CPF" maxlength="14" inputmode="numeric" title="CPF"></span></div>`).join('')
     : '<p class="suave peq">Nenhuma ainda.</p>';
+  $$('[data-cpf]', $('#pt-pessoas')).forEach((i) => {
+    mascaraDoc(i, 'cpf');
+    i.onchange = async () => { try { await api('pontoCpf', { usuario: i.dataset.cpf, cpf: i.value }, { silencio: true }); toast('CPF salvo.', 'ok'); carregarPontoAdmin(true); } catch (e) { toast(e.message, 'erro'); } };
+  });
+  // empresa e assinaturas
+  const emp = empresaPonto();
+  $('#pe-razao').value = emp.razao; $('#pe-fantasia').value = emp.fantasia; $('#pe-cnpj').value = fmtCnpj(emp.cnpj);
+  $('#pe-meu-cpf').value = fmtCpf(est.usuario.cpf);
   $$('[data-funcao]', $('#pt-pessoas')).forEach((i) => i.onchange = async () => { try { await api('pontoFuncao', { usuario: i.dataset.funcao, funcao: i.value }, { silencio: true }); toast('Função salva.', 'ok'); carregarPontoAdmin(true); } catch (e) { toast(e.message, 'erro'); } });
   // sócios
   $('#pt-socios-box').classList.toggle('oculto', !D.souAdmin);
@@ -5817,6 +5873,13 @@ $('#pf-fechar').onclick = async () => {
 };
 $('#pt-liberar').onclick = async () => {
   try { await api('pontoLiberarHoje', { liberar: !est.pt.dados.liberadoHoje }); carregarPontoAdmin(true); } catch (e) { toast(e.message, 'erro'); }
+};
+mascaraDoc($('#pe-cnpj'), 'cnpj'); mascaraDoc($('#pe-meu-cpf'), 'cpf');
+$('#pe-salvar').onclick = async () => {
+  try { await api('pontoEmpresa', { razao: $('#pe-razao').value, fantasia: $('#pe-fantasia').value, cnpj: $('#pe-cnpj').value }); toast('Dados da empresa salvos.', 'ok'); carregarPontoAdmin(true); } catch (e) { toast(e.message, 'erro'); }
+};
+$('#pe-meu-cpf-salvar').onclick = async () => {
+  try { const r = await api('pontoCpf', { usuario: est.usuario.id, cpf: $('#pe-meu-cpf').value }); est.usuario.cpf = r.cpf; $('#pe-meu-cpf').value = fmtCpf(r.cpf); toast('Seu CPF foi salvo.', 'ok'); } catch (e) { toast(e.message, 'erro'); }
 };
 $('#pt-nova-func').onclick = () => editarUsuario(null, 'funcionario');
 $('#pt-imprimir').onclick = () => abrirComprovanteSemanal(null, null);
@@ -5879,6 +5942,7 @@ function desenharTelasQr() {
   const adm = !!D.souAdmin;
   let local = telaQrLocal();
   if (local && !lista.some((t) => t.id === local.id)) { guardarTelaQr(null); local = null; }   // foi desautorizado
+  if (local) { const meu = lista.find((t) => t.id === local.id); if (meu && meu.nome !== local.nome) { local = Object.assign({}, local, { nome: meu.nome }); guardarTelaQr(local); } }
   $('#pt-telas').innerHTML = lista.length ? lista.map((t) => `<div class="cfg-l"><span><b>🖥️ ${esc(t.nome)}</b>${local && local.id === t.id ? ' <span class="selo cinza">este navegador</span>' : ''}
       <div class="suave peq">${t.online ? '<span class="pt-pos">● aberto agora</span>' : (t.vistoEm ? 'aberto pela última vez em ' + esc(dBR(t.vistoEm) + ' às ' + t.vistoEm.slice(11, 16)) : 'ainda não foi aberto')} · autorizado por ${esc(t.criadoPor || '?')} em ${esc(dBR(t.criadoEm))}</div>
       <div class="suave peq">${t.redeAtiva ? `🌐 internet reconhecida: <b>${esc(t.ip)}</b> <span title="atualizada em ${esc(t.ipEm || '')}">(qualquer navegador nela mostra o botão)</span>` : '🌐 internet ainda não reconhecida: abra o atalho (ou o Hub) nesse computador uma vez'}</div></span>
@@ -5970,6 +6034,7 @@ async function atualizarTelaQr() {
     return;
   }
   tqErro('');
+  if (local && d.nome && d.nome !== local.nome) guardarTelaQr(Object.assign({}, local, { nome: d.nome }));
   tq.dados = d;
   const t = Date.parse(d.agora + '-03:00'); if (!Number.isNaN(t)) tq.desvio = t - Date.now();
   tq.fim = Date.now() + d.segundos * 1000;
@@ -6057,6 +6122,11 @@ function abrirComprovanteSemanal(semanaIni, pessoasIds) {
         if (r.problemas) avisos.push(`${x.nome} tem ${r.problemas} dia(s) com batida faltando`);
       });
       if (fim >= D.hoje) avisos.push('esta semana ainda não terminou');
+      const emp = empresaPonto();
+      if (!emp.cnpj) avisos.push('falta o CNPJ do restaurante (Empresa e assinaturas)');
+      if (!est.usuario.cpf) avisos.push('falta o seu CPF (Empresa e assinaturas)');
+      const semCpf = ativos.filter((x) => !x.cpf).map((x) => x.nome.split(' ')[0]);
+      if (semCpf.length) avisos.push('falta o CPF de ' + semCpf.join(', ') + ' (Funcionárias)');
       $('#cs-aviso', m).innerHTML = avisos.length ? `<div class="aviso" style="margin:12px 0 0;font-weight:600">⚠️ ${esc(avisos.join(' · '))}. Resolva antes de imprimir, para a folha sair com os horários finais.</div>` : '';
     };
     $('#cs-sem', m).onchange = atualizar; atualizar();
@@ -6115,12 +6185,15 @@ async function folhaSemanal(pes, ini) {
     return `<tr><td>${i + 1}</td><td>${dBR(x.d.data)}</td><td>${esc(antes)}</td><td>${esc(depois)}</td><td>“${esc(a.motivo)}”</td><td>${esc(a.tipo === 'gestor' ? 'correção de ' + (a.decididoPor || '') : (a.pedidoPor || '') + ' / ' + (a.decididoPor || ''))} · ${esc(dBR(a.decididoEm))}</td></tr>`;
   }).join('') + '</table>' : '<p class="r-obs">Nenhum ajuste nesta semana: todos os horários são os registrados pela funcionária.</p>';
   const agora = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date());
+  const emp = empresaPonto();
+  const razao = emp.razao || emp.fantasia || '______________________________';
+  const cnpj = emp.cnpj ? fmtCnpj(emp.cnpj) : '____.____.____/________-____';
   const html = `<div class="folha-ponto">
-    <div class="fp-cab"><div><div class="fp-marca">Restaurante Madora · Controle de jornada</div><h1>Comprovante semanal de horas trabalhadas</h1></div><div class="fp-via"><b>__VIA__</b><br>Semana ${Ponto.semanaISO(ini)} de ${ini.slice(0, 4)}</div></div>
+    <div class="fp-cab"><div><div class="fp-marca">${esc(razao)} · CNPJ ${esc(cnpj)}${emp.fantasia && emp.fantasia !== razao ? ' · ' + esc(emp.fantasia) : ''}</div><h1>Comprovante semanal de horas trabalhadas</h1></div><div class="fp-via"><b>__VIA__</b><br>Semana ${Ponto.semanaISO(ini)} de ${ini.slice(0, 4)}</div></div>
     <div class="fp-dados">
-      <div><span>Empregador:</span> <b>Restaurante Madora</b></div>
+      <div><span>Empregador:</span> <b>${esc(razao)}</b>${emp.fantasia && emp.fantasia !== razao ? ' (' + esc(emp.fantasia) + ')' : ''} · CNPJ: <b>${esc(cnpj)}</b></div>
       <div><span>Período:</span> <b>${dBR(ini)}/${ini.slice(0, 4)} (segunda) a ${dBR(fim)}/${fim.slice(0, 4)} (domingo)</b></div>
-      <div><span>Funcionária(o):</span> <b>${esc(pes.nome)}</b> · Função: <b>${esc(pes.funcao || '______________________')}</b></div>
+      <div><span>Funcionária(o):</span> <b>${esc(pes.nome)}</b> · CPF: <b>${esc(pes.cpf ? fmtCpf(pes.cpf) : '______.______.______-____')}</b> · Função: <b>${esc(pes.funcao || '______________________')}</b></div>
       <div><span>Jornada:</span> ${esc(jornadaTxt || '—')}</div>
     </div>
     <table><tr><th>Dia</th><th class="v">Entrada</th><th class="v">Saída</th><th class="v">Intervalo</th><th class="v">Trabalhado</th><th class="v">Previsto</th><th class="v">Saldo</th><th>Observações</th></tr>${linhas}
@@ -6129,8 +6202,9 @@ async function folhaSemanal(pes, ini) {
     ${ajustes}
     <div class="fp-decl">Declaro que conferi os horários acima, que correspondem aos dias e horários em que trabalhei nesta semana, incluindo os ajustes listados. Recebi uma via deste comprovante. Os horários foram registrados por mim no sistema de ponto, escaneando com o meu celular o QR Code exibido no computador do restaurante, com a hora oficial de Brasília.</div>
     <div class="fp-data">Local e data: ________________________________, ____/____/________</div>
-    <div class="fp-assin"><div><b>${esc(pes.nome)}</b><small>Funcionária(o)</small></div><div><b>${esc(est.usuario.nome)}</b><small>Pelo empregador · Restaurante Madora</small></div></div>
-    <div class="fp-rodape"><span>Gerado pelo Hub Madora em ${agora} por ${esc(est.usuario.nome)}. Os registros originais de cada batida ficam guardados sem alteração.</span><span>Código de verificação: <b>${codigo}</b></span></div>
+    <div class="fp-assin"><div><b>${esc(pes.nome)}</b><small>Funcionária(o) · CPF ${esc(pes.cpf ? fmtCpf(pes.cpf) : '______________')}</small></div>
+      <div><b>${esc(razao)}</b><small>CNPJ ${esc(cnpj)}<br>p/ ${esc(est.usuario.nome)} · CPF ${esc(est.usuario.cpf ? fmtCpf(est.usuario.cpf) : '______________')}</small></div></div>
+    <div class="fp-rodape"><span>${esc(razao)} · CNPJ ${esc(cnpj)} · Gerado pelo Hub Madora em ${agora} por ${esc(est.usuario.nome)}. Os registros originais de cada batida ficam guardados sem alteração.</span><span>Código de verificação: <b>${codigo}</b></span></div>
   </div>`;
   return { html, codigo };
 }
