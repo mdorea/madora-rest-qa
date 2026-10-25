@@ -440,6 +440,11 @@ body.modo-func .conteudo { margin-left: 0 !important; padding-bottom: 0; }
 .feriado-cart { text-align: center; padding: 22px 20px; border-top: 6px solid var(--prim); margin-bottom: 12px; }
 .aviso-ok { background: var(--bom-cla); color: var(--bom); border: 1px solid var(--info-borda); border-radius: 12px; padding: 10px 14px; font-weight: 600; }
 .login .aviso-ok { margin: 16px 0 14px; }
+.l-ponto { margin: 18px 0 4px; }
+.l-ponto-btn { width: 100%; min-height: 64px; flex-direction: column; gap: 0; font-size: 1.15rem; font-weight: 800; border-radius: 14px; }
+.l-ponto-btn small { font-size: .8rem; font-weight: 600; opacity: .9; }
+.l-ou { display: flex; align-items: center; gap: 10px; color: var(--suave); font-size: .8rem; margin: 16px 0 2px; }
+.l-ou::before, .l-ou::after { content: ''; flex: 1; border-top: 1px solid var(--borda); }
 /* leitor de QR (celular da funcionária) */
 .scan-box { position: relative; border-radius: 16px; overflow: hidden; background: #000; aspect-ratio: 1 / 1; max-height: 62vh; margin: 6px auto 10px; }
 .scan-box video { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -581,6 +586,10 @@ body.modo-tela-qr #app, body.modo-tela-qr #tela-login { display: none !important
   <button class="btn btn-claro btn-tema login-tema" data-tema-botao title="Modo claro / escuro" aria-label="Trocar entre modo claro e escuro">🌙</button>
   <div class="login-cartao">
     <div class="marca"><div class="marca-icone">M</div><div><h1>Hub Madora</h1><div class="suave peq">Financeiro, fechamento e ponto do restaurante</div></div></div>
+    <div id="l-ponto" class="l-ponto oculto">
+      <button class="btn btn-prim l-ponto-btn" id="b-bater-ponto" type="button">⏱️ Bater ponto<small>mostra o QR Code para escanear com o celular</small></button>
+      <div class="l-ou"><span>ou entre no sistema</span></div>
+    </div>
     <p id="l-info" class="aviso-ok oculto">📷 Entre com seu usuário e senha para registrar o ponto.</p>
     <form id="f-login" autocomplete="on" onsubmit="return false">
       <label class="rotulo" for="l-email">Usuário</label>
@@ -594,12 +603,12 @@ body.modo-tela-qr #app, body.modo-tela-qr #tela-login { display: none !important
   </div>
 </section>
 
-<!-- ========== TELA DO QR CODE DO PONTO (computador do caixa, endereço com ?tela-ponto) ========== -->
+<!-- ========== QR CODE DO PONTO (botão "Bater ponto" da tela de entrada, nos computadores autorizados) ========== -->
 <section id="tela-qr" class="tela-qr oculto">
   <div class="tq-qr-lado">
     <div class="tq-qr-caixa"><canvas id="tq-canvas" aria-label="QR Code para bater o ponto"></canvas><div id="tq-flash" class="tq-flash oculto"></div></div>
     <div class="tq-barra"><i id="tq-barra"></i></div>
-    <div class="tq-sub">O código muda a cada 20 segundos e depois de cada batida</div>
+    <div class="tq-sub">O código muda a cada 10 minutos e depois de cada batida · <span id="tq-troca"></span></div>
   </div>
   <div class="tq-info">
     <div class="marca"><div class="marca-icone">M</div><div><b style="font-size:1.25rem">Ponto Madora</b><div class="suave peq">Hub Madora · controle de ponto</div></div></div>
@@ -607,13 +616,13 @@ body.modo-tela-qr #app, body.modo-tela-qr #tela-login { display: none !important
     <div class="tq-dia" id="tq-dia"></div>
     <div id="tq-status" class="tq-status"></div>
     <ol class="tq-passos">
-      <li><div>Abra a <b>câmera</b> do celular<span>ou o botão <b>📷 Bater ponto</b> no Hub Madora</span></div></li>
-      <li><div>Aponte para o <b>QR Code</b></div></li>
-      <li><div>Toque no link que aparecer. <b>Pronto!</b></div></li>
+      <li><div>No <b>celular</b>, entre no Hub Madora</div></li>
+      <li><div>Toque em <b>📷 Bater ponto</b></div></li>
+      <li><div>Aponte para este <b>QR Code</b>. <b>Pronto!</b><span>a confirmação aparece aqui e no celular</span></div></li>
     </ol>
     <h3 style="margin:18px 0 6px">Batidas de hoje</h3>
     <div id="tq-ultimas"></div>
-    <div class="tq-rodape"><span id="tq-nome" class="suave peq"></span><button class="btn btn-claro btn-peq" id="tq-cheia">⛶ Tela cheia</button></div>
+    <div class="tq-rodape"><span id="tq-nome" class="suave peq"></span><span class="linha"><button class="btn btn-claro btn-peq" id="tq-cheia">⛶ Tela cheia</button><button class="btn btn-prim btn-peq" id="tq-voltar">← Voltar</button></span></div>
   </div>
   <div id="tq-erro" class="tq-erro oculto"></div>
 </section>
@@ -844,8 +853,8 @@ body.modo-tela-qr #app, body.modo-tela-qr #tela-login { display: none !important
         </div>
         <div>
           <div class="painel">
-            <h3>📺 Tela do QR Code (computador do caixa)</h3>
-            <p class="suave peq">Elas batem o ponto escaneando com o celular o QR Code que aparece na tela de um computador do restaurante. O código muda a cada 20 segundos e depois de cada batida: foto, print ou link mandado por mensagem não funcionam. Não depende de Wi-Fi nem de operadora.</p>
+            <h3>📺 Computador do ponto</h3>
+            <p class="suave peq">No computador do restaurante, a funcionária clica em <b>⏱️ Bater ponto</b> na tela de entrada (sem entrar) e escaneia o QR Code com o celular, onde está logada. O QR muda a cada 10 minutos e depois de cada batida. Não depende de Wi-Fi nem de operadora. Só computadores autorizados aqui mostram o botão.</p>
             <div id="pt-telas"></div>
             <div id="pt-tela-aqui" style="margin-top:12px"></div>
           </div>
@@ -3840,6 +3849,7 @@ function sairLocal(msg) {
   document.body.classList.remove('modo-func'); est.mp = { aba: 'hoje', status: null, desvio: 0, mes: null, dados: null }; est.pt = { dados: null, pessoa: null };
   $('#app').classList.add('oculto'); $('#tela-login').classList.remove('oculto');
   $('#l-erro').textContent = msg || '';
+  prepararBotaoPontoLogin();
   setTimeout(() => ($('#l-email').value ? $('#l-senha') : $('#l-email')).focus(), 50);
 }
 $('#b-usuario').onclick = (e) => { e.stopPropagation(); $('#drop-usuario').classList.toggle('oculto'); };
@@ -5381,8 +5391,8 @@ function desenharMeuPontoHoje() {
   const confirma = ultima ? `<div class="mp-confirma"><div class="ok-bola">✓</div><div>${ultima.tipo === 'entrada' ? 'Entrada' : 'Saída'} registrada às ${esc(ultima.hora)}<small>${ultima.tipo === 'entrada' ? (j ? 'Bom trabalho! A saída prevista é às ' + j.saida + '.' : 'Bom trabalho!') : 'Até a próxima! 🌙'}</small></div></div>` : '';
   const btnTxt = s.proxima === 'entrada' ? 'Entrada' : 'Saída';
   let botao;
-  if (s.pode) botao = `<button class="btn btn-prim mp-bater ${s.proxima === 'saida' ? 'saida' : ''}" id="mp-bater">📷 Bater ponto<small>${btnTxt} · escaneie o QR Code do caixa</small></button>
-    <p class="suave peq" style="text-align:center;margin:8px 0 0">Ou abra a câmera do celular, aponte para o QR Code na tela do caixa e toque no link.</p>`;
+  if (s.pode) botao = `<button class="btn btn-prim mp-bater ${s.proxima === 'saida' ? 'saida' : ''}" id="mp-bater">📷 Bater ponto<small>${btnTxt} · escanear o QR Code</small></button>
+    <p class="suave peq" style="text-align:center;margin:8px 0 0">No computador do restaurante, clique em <b>⏱️ Bater ponto</b> (na tela de entrada, sem entrar) para aparecer o QR Code.</p>`;
   else if (s.motivo === 'espera') botao = `<button class="btn btn-prim mp-bater" disabled>Bater ponto<small>${btnTxt} · liberado em ${s.espera}s</small></button>`;
   else botao = `<button class="btn mp-bater mp-off" disabled>Bater ponto<small>${s.motivo === 'feriado' ? 'fechado hoje' : 'indisponível agora'}</small></button>`;
   const pares = hojeDia.pares.length ? hojeDia.pares : [{ e: null, s: null }];
@@ -5451,14 +5461,14 @@ async function lerQrDoVideo(video, tela) {
 function escanearQr() {
   let fluxo = null, rodando = true;
   const parar = () => { rodando = false; if (fluxo) fluxo.getTracks().forEach((t) => t.stop()); fluxo = null; };
-  modal(`<h2>📷 Escaneie o QR Code do caixa</h2>
+  modal(`<h2>📷 Escaneie o QR Code</h2>
     <div class="scan-box"><video id="sc-video" playsinline muted autoplay></video><div class="scan-mira"></div></div>
     <canvas id="sc-canvas" class="oculto"></canvas>
     <p class="suave peq" id="sc-msg" style="text-align:center">Abrindo a câmera…</p>
     <div class="modal-acoes"><button class="btn btn-claro" data-a="n">Fechar</button></div>`, async (m) => {
     $('[data-a=n]', m).onclick = () => fecharModal(null);
     const msg = (t) => { const e = $('#sc-msg', m); if (e) e.innerHTML = t; };
-    const semCamera = 'Não consegui abrir a câmera aqui. Sem problema: <b>abra o app da câmera do celular</b>, aponte para o QR Code na tela do caixa e toque no link que aparecer.';
+    const semCamera = 'Não consegui abrir a câmera aqui. Sem problema: <b>abra o app da câmera do celular</b>, aponte para o QR Code na tela do computador e toque no link que aparecer.';
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { msg(semCamera); return; }
     try { fluxo = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false }); } catch (e) {
       msg(/NotAllowed|Permission/i.test(e.name || e.message) ? 'O celular não deixou usar a câmera. Toque no 🔒 (ou ⓘ) ao lado do endereço do site, permita a <b>Câmera</b> e tente de novo.<br><br>' + semCamera : semCamera);
@@ -5468,13 +5478,13 @@ function escanearQr() {
     const video = $('#sc-video', m);
     video.srcObject = fluxo;
     try { await video.play(); } catch (e) { /* toca sozinho */ }
-    msg('Aponte para o QR Code na tela do caixa.');
+    msg('Aponte para o QR Code na tela do computador do restaurante.');
     while (rodando) {
       let v = null;
       try { v = await lerQrDoVideo(video, $('#sc-canvas', m)); } catch (e) { msg(semCamera); parar(); return; }
       const cod = v && codigoDoQr(v);
       if (cod) { parar(); fecharModal(null); baterComQr(cod); return; }
-      if (v) msg('Esse QR Code não é o do ponto. Aponte para o QR na tela do caixa.');
+      if (v) msg('Esse QR Code não é o do ponto. Aponte para o QR na tela do computador.');
       await new Promise((r) => setTimeout(r, 200));
     }
   }).then(parar);
@@ -5809,40 +5819,46 @@ $('#pt-imprimir').onclick = () => abrirComprovanteSemanal(null, null);
 const TELA_QR_CHAVE = 'hm_tela_qr';
 function telaQrLocal() { try { return JSON.parse(localStorage.getItem(TELA_QR_CHAVE) || 'null'); } catch (e) { return null; } }
 function guardarTelaQr(v) { try { if (v) localStorage.setItem(TELA_QR_CHAVE, JSON.stringify(v)); else localStorage.removeItem(TELA_QR_CHAVE); } catch (e) { /* armazenamento indisponível */ } }
-const linkTelaQr = () => location.origin + location.pathname + '?tela-ponto';
-function abrirTelaQr() { const w = window.open(linkTelaQr(), '_blank'); if (!w) location.href = linkTelaQr(); }
+/** Mostra (ou não) o botão "Bater ponto" na tela de entrada: só nos computadores autorizados */
+function prepararBotaoPontoLogin() { const el = $('#l-ponto'); if (el) el.classList.toggle('oculto', !telaQrLocal()); }
 function desenharTelasQr() {
   const D = est.pt.dados;
   const lista = D.terminais || [];
   let local = telaQrLocal();
-  if (local && !lista.some((t) => t.id === local.id)) { guardarTelaQr(null); local = null; }   // foi desautorizada
+  if (local && !lista.some((t) => t.id === local.id)) { guardarTelaQr(null); local = null; }   // foi desautorizado
   $('#pt-telas').innerHTML = lista.length ? lista.map((t) => `<div class="cfg-l"><span><b>🖥️ ${esc(t.nome)}</b>${local && local.id === t.id ? ' <span class="selo cinza">este computador</span>' : ''}
-      <div class="suave peq">${t.online ? '<span class="pt-pos">● ligada agora</span>' : '○ desligada' + (t.vistoEm ? ' · última vez em ' + esc(dBR(t.vistoEm) + ' às ' + t.vistoEm.slice(11, 16)) : ' · ainda não foi aberta')} · autorizada por ${esc(t.criadoPor || '?')} em ${esc(dBR(t.criadoEm))}</div></span>
+      <div class="suave peq">${t.online ? '<span class="pt-pos">● QR aberto agora</span>' : (t.vistoEm ? 'QR aberto pela última vez em ' + esc(dBR(t.vistoEm) + ' às ' + t.vistoEm.slice(11, 16)) : 'o QR ainda não foi aberto')} · autorizado por ${esc(t.criadoPor || '?')} em ${esc(dBR(t.criadoEm))}</div></span>
       <button class="btn btn-texto btn-peq" data-tela-tirar="${t.id}">desautorizar</button></div>`).join('')
     : '<p class="suave" style="margin:6px 0">Nenhum computador autorizado ainda. <b>Enquanto não tiver, ninguém consegue bater o ponto.</b></p>';
   $$('[data-tela-tirar]', $('#pt-telas')).forEach((b) => b.onclick = async () => {
-    if (!(await confirmar('Desautorizar esta tela?', 'O QR Code dela para de funcionar na hora. Para voltar, é preciso autorizar o computador de novo.', 'Desautorizar'))) return;
-    try { await api('pontoTerminalTirar', { id: Number(b.dataset.telaTirar) }); toast('Tela desautorizada.', 'ok'); carregarPontoAdmin(true); } catch (e) { toast(e.message, 'erro'); }
+    if (!(await confirmar('Desautorizar este computador?', 'O botão “Bater ponto” some da tela de entrada dele e o QR Code para de funcionar na hora.', 'Desautorizar'))) return;
+    try { await api('pontoTerminalTirar', { id: Number(b.dataset.telaTirar) }); toast('Computador desautorizado.', 'ok'); carregarPontoAdmin(true); } catch (e) { toast(e.message, 'erro'); }
   });
   $('#pt-tela-aqui').innerHTML = local
-    ? `<div class="aviso-ok">✓ Este computador é a tela <b>${esc(local.nome)}</b>.</div>
-       <div class="linha" style="margin-top:10px"><button class="btn btn-prim btn-peq" id="pt-tela-abrir">▶ Abrir a tela do QR Code</button></div>
-       <p class="suave peq" style="margin-top:8px">Dica: salve o endereço <span class="codigo-pdv" style="display:inline;padding:2px 6px">${esc(linkTelaQr())}</span> nos favoritos deste computador para abrir direto quando ligar. Pode <b>sair da sua conta</b> aqui depois: a tela do QR continua funcionando sozinha (e ninguém no caixa vê o financeiro).</p>`
-    : `<p class="suave peq" style="margin:0 0 8px"><b>No computador do caixa</b>, entre aqui como administrador, dê um nome e clique em autorizar. Depois é só abrir a tela do QR e deixar aberta.</p>
+    ? `<div class="aviso-ok">✓ Este computador está autorizado (<b>${esc(local.nome)}</b>). A tela de entrada do Hub Madora aqui mostra o botão <b>⏱️ Bater ponto</b>.</div>
+       <div class="linha" style="margin-top:10px"><button class="btn btn-claro btn-peq" id="pt-tela-abrir">👁️ Ver o QR Code agora</button></div>`
+    : `<p class="suave peq" style="margin:0 0 8px"><b>No computador do restaurante</b>, entre aqui como administrador, dê um nome e clique em autorizar. Depois disso, a tela de entrada dele ganha o botão <b>⏱️ Bater ponto</b>, que mostra o QR sem precisar entrar.</p>
        <div class="linha"><input class="campo" id="pt-tela-nome" style="flex:1;min-width:140px" maxlength="40" placeholder="Nome (ex.: Caixa)" value="${lista.length ? '' : 'Caixa'}"><button class="btn btn-prim btn-peq" id="pt-tela-nova">＋ Autorizar este computador</button></div>`;
-  if ($('#pt-tela-abrir')) $('#pt-tela-abrir').onclick = abrirTelaQr;
+  if ($('#pt-tela-abrir')) $('#pt-tela-abrir').onclick = () => abrirTelaQr();
   if ($('#pt-tela-nova')) $('#pt-tela-nova').onclick = async () => {
     try {
       const t = await api('pontoTerminalCriar', { nome: $('#pt-tela-nome').value });
       guardarTelaQr({ id: t.id, nome: t.nome, token: t.token });
+      prepararBotaoPontoLogin();
       await carregarPontoAdmin(true);
-      if (await confirmar('Computador autorizado ✓', `“${t.nome}” agora pode mostrar o QR Code do ponto. Abrir a tela do QR agora? (abre numa aba nova; deixe ela aberta)`, '▶ Abrir agora')) abrirTelaQr();
+      modal(`<h2>Computador autorizado ✓</h2><p>Agora, na <b>tela de entrada</b> do Hub Madora neste computador, aparece o botão <b>⏱️ Bater ponto</b>. A funcionária clica nele (sem entrar com usuário e senha), e o QR Code aparece para ela escanear com o celular.</p>
+        <p class="suave">Pode <b>sair da sua conta</b> aqui quando terminar: o botão continua funcionando, e ninguém vê o financeiro.</p>
+        <div class="modal-acoes"><button class="btn btn-claro" data-a="n">Fechar</button><button class="btn btn-prim" data-a="s">👁️ Ver o QR Code</button></div>`, (m) => {
+        $('[data-a=n]', m).onclick = () => fecharModal(null);
+        $('[data-a=s]', m).onclick = () => { fecharModal(null); abrirTelaQr(); };
+      });
     } catch (e) { toast(e.message, 'erro'); }
   };
 }
 
-// ---------- a tela do QR Code em si (aberta com ?tela-ponto no computador do caixa; não precisa de login)
-const tq = { qr: '', desvio: 0, fim: 0, vistas: {}, flashAte: 0, falhas: 0, dados: null };
+// ---------- a tela do QR Code em si (botão "Bater ponto" da tela de entrada; não precisa de login)
+const tq = { qr: '', desvio: 0, fim: 0, vistas: {}, flashAte: 0, falhas: 0, dados: null, timers: [], fecharEm: 0, fixa: false };
+const TQ_FECHA_DEPOIS_BATIDA = 10000, TQ_FECHA_PARADA = 5 * 60000;
 function desenharQr(texto) {
   const c = $('#tq-canvas');
   const q = QRGerar(texto);
@@ -5855,24 +5871,24 @@ function desenharQr(texto) {
   for (let l = 0; l < q.n; l++) for (let k = 0; k < q.n; k++) if (q.escuro(l, k)) ctx.fillRect((k + borda) * px, (l + borda) * px, px, px);
 }
 const fmtHoraTQ = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', second: '2-digit' });
-function tqErro(html) { const e = $('#tq-erro'); e.innerHTML = html; e.classList.toggle('oculto', !html); }
+function tqErro(html) { const e = $('#tq-erro'); e.innerHTML = html; e.classList.toggle('oculto', !html); const v = $('#tq-erro [data-tq-voltar]'); if (v) v.onclick = fecharTelaQr; }
 async function atualizarTelaQr() {
   const local = telaQrLocal();
   if (!local || !local.token) {
-    tqErro(`<div><div style="font-size:3rem">🔒</div><h2>Este computador ainda não está autorizado</h2>
-      <p>Para mostrar o QR Code do ponto aqui, entre no Hub Madora <b>neste computador</b> como administrador e vá em<br><b>⏱️ Ponto → 📺 Tela do QR Code → ＋ Autorizar este computador</b>.</p>
-      <p><a class="btn btn-prim" href="${esc(location.pathname)}">Entrar no Hub Madora</a></p></div>`);
+    tqErro(`<div><div style="font-size:3rem">🔒</div><h2>Este computador não está autorizado para o ponto</h2>
+      <p>Para bater o ponto por aqui, o administrador precisa entrar no Hub Madora <b>neste computador</b> e ir em<br><b>⏱️ Ponto → 📺 Computador do ponto → ＋ Autorizar este computador</b>.</p>
+      <p><button class="btn btn-prim" data-tq-voltar>← Voltar</button></p></div>`);
     return;
   }
   let d;
   try { d = await SRV.executar('pontoTela', { token: local.token }); tq.falhas = 0; } catch (e) {
     tq.falhas++;
-    if (tq.falhas >= 3) tqErro(`<div><div style="font-size:3rem">📡</div><h2>Sem conexão com a internet</h2><p>Tentando de novo sozinho… Assim que a internet voltar, o QR Code reaparece.</p></div>`);
+    if (tq.falhas >= 3) tqErro(`<div><div style="font-size:3rem">📡</div><h2>Sem conexão com a internet</h2><p>Tentando de novo sozinho… Assim que a internet voltar, o QR Code reaparece.</p><p><button class="btn btn-claro" data-tq-voltar>← Voltar</button></p></div>`);
     return;
   }
   if (!d.ok) {
-    guardarTelaQr(null);
-    tqErro(`<div><div style="font-size:3rem">🚫</div><h2>Esta tela foi desautorizada</h2><p>Para voltar a mostrar o QR Code aqui, autorize o computador de novo em <b>⏱️ Ponto → 📺 Tela do QR Code</b>.</p><p><a class="btn btn-prim" href="${esc(location.pathname)}">Entrar no Hub Madora</a></p></div>`);
+    guardarTelaQr(null); prepararBotaoPontoLogin();
+    tqErro(`<div><div style="font-size:3rem">🚫</div><h2>Este computador foi desautorizado</h2><p>Para voltar a bater o ponto por aqui, o administrador autoriza o computador de novo em <b>⏱️ Ponto → 📺 Computador do ponto</b>.</p><p><button class="btn btn-prim" data-tq-voltar>← Voltar</button></p></div>`);
     return;
   }
   tqErro('');
@@ -5894,27 +5910,45 @@ async function atualizarTelaQr() {
   d.ultimas.forEach((u) => { tq.vistas[u.momento] = 1; });
   if (nova && tq.iniciada) {
     const f = $('#tq-flash');
-    f.innerHTML = `<div class="ok-bola" style="width:64px;height:64px;font-size:2rem">✓</div><b>${esc(nova.nome)}</b><span>${nova.tipo === 'entrada' ? 'Entrada' : 'Saída'} às ${esc(nova.hora)}</span>`;
-    f.classList.remove('oculto'); tq.flashAte = Date.now() + 5000;
+    f.innerHTML = `<div class="ok-bola" style="width:64px;height:64px;font-size:2rem">✓</div><b>${esc(nova.nome)}</b><span>${nova.tipo === 'entrada' ? 'Entrada' : 'Saída'} registrada às ${esc(nova.hora)}</span>`;
+    f.classList.remove('oculto'); tq.flashAte = Date.now() + 6000;
+    if (!tq.fixa) tq.fecharEm = Date.now() + TQ_FECHA_DEPOIS_BATIDA;   // volta sozinho para a tela de entrada
   }
   tq.iniciada = true;
 }
-function iniciarTelaQr() {
+/** Abre o QR por cima de tudo. fixa = true: fica aberto direto (endereço com ?tela-ponto) */
+function abrirTelaQr(fixa) {
+  fecharTelaQr();
+  Object.assign(tq, { qr: '', vistas: {}, iniciada: false, flashAte: 0, falhas: 0, fixa: !!fixa, fecharEm: fixa ? 0 : Date.now() + TQ_FECHA_PARADA });
+  $('#tq-flash').classList.add('oculto');
+  $('#tq-ultimas').innerHTML = ''; $('#tq-status').innerHTML = ''; tqErro('');
   document.body.classList.add('modo-tela-qr');
   $('#tela-qr').classList.remove('oculto');
   atualizarTelaQr();
-  setInterval(atualizarTelaQr, 2000);
-  setInterval(() => {
+  tq.timers.push(setInterval(atualizarTelaQr, 2000));
+  tq.timers.push(setInterval(() => {
     $('#tq-hora').textContent = fmtHoraTQ.format(new Date(Date.now() + tq.desvio));
     const falta = Math.max(0, tq.fim - Date.now());
-    $('#tq-barra').style.width = Math.min(100, falta / 200) + '%';
+    $('#tq-barra').style.width = Math.min(100, falta / 6000) + '%';
+    const min = Math.ceil(falta / 60000);
+    $('#tq-troca').textContent = tq.fim ? (min > 1 ? `troca em ${min} minutos` : 'troca em menos de 1 minuto') : '';
     if (tq.flashAte && Date.now() > tq.flashAte) { $('#tq-flash').classList.add('oculto'); tq.flashAte = 0; }
-  }, 250);
-  // mantém a tela do computador ligada
-  const acordar = async () => { try { if (navigator.wakeLock && document.visibilityState === 'visible') await navigator.wakeLock.request('screen'); } catch (e) { /* sem suporte */ } };
-  acordar(); document.addEventListener('visibilitychange', acordar);
-  $('#tq-cheia').onclick = () => { try { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); } catch (e) { /* sem tela cheia */ } };
+    if (tq.fecharEm && Date.now() > tq.fecharEm) fecharTelaQr();
+  }, 250));
+  acordarTela();
 }
+function fecharTelaQr() {
+  tq.timers.forEach((x) => clearInterval(x)); tq.timers = [];
+  document.body.classList.remove('modo-tela-qr');
+  $('#tela-qr').classList.add('oculto');
+  if (document.fullscreenElement) try { document.exitFullscreen(); } catch (e) { /* sem tela cheia */ }
+}
+// mantém a tela do computador ligada enquanto o QR está aberto
+async function acordarTela() { try { if (navigator.wakeLock && document.visibilityState === 'visible' && !$('#tela-qr').classList.contains('oculto')) await navigator.wakeLock.request('screen'); } catch (e) { /* sem suporte */ } }
+document.addEventListener('visibilitychange', acordarTela);
+$('#tq-cheia').onclick = () => { try { if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen(); } catch (e) { /* sem tela cheia */ } };
+$('#tq-voltar').onclick = () => fecharTelaQr();
+$('#b-bater-ponto').onclick = () => abrirTelaQr();
 
 // ---------- comprovante semanal (folha para assinar)
 function abrirComprovanteSemanal(semanaIni, pessoasIds) {
@@ -6015,7 +6049,7 @@ async function folhaSemanal(pes, ini) {
       <tr class="tot"><td>Total da semana</td><td></td><td></td><td></td><td class="v">${Ponto.duracao(r.trabalhado)}</td><td class="v">${Ponto.duracao(prevSemana)}</td><td class="v">${Ponto.duracao(r.saldo, true)}</td><td>${r.diasTrabalhados} dia(s) trabalhado(s)</td></tr></table>
     ${aj.length ? '<p class="r-obs">* horário corrigido por ajuste (detalhes abaixo). As batidas originais continuam guardadas no sistema.</p>' : ''}
     ${ajustes}
-    <div class="fp-decl">Declaro que conferi os horários acima, que correspondem aos dias e horários em que trabalhei nesta semana, incluindo os ajustes listados. Recebi uma via deste comprovante. Os horários foram registrados por mim no sistema de ponto, escaneando o QR Code exibido no computador do restaurante, com a hora oficial de Brasília.</div>
+    <div class="fp-decl">Declaro que conferi os horários acima, que correspondem aos dias e horários em que trabalhei nesta semana, incluindo os ajustes listados. Recebi uma via deste comprovante. Os horários foram registrados por mim no sistema de ponto, escaneando com o meu celular o QR Code exibido no computador do restaurante, com a hora oficial de Brasília.</div>
     <div class="fp-data">Local e data: ________________________________, ____/____/________</div>
     <div class="fp-assin"><div><b>${esc(pes.nome)}</b><small>Funcionária(o)</small></div><div><b>${esc(est.usuario.nome)}</b><small>Pelo empregador · Restaurante Madora</small></div></div>
     <div class="fp-rodape"><span>Gerado pelo Hub Madora em ${agora} por ${esc(est.usuario.nome)}. Os registros originais de cada batida ficam guardados sem alteração.</span><span>Código de verificação: <b>${codigo}</b></span></div>
@@ -6055,8 +6089,9 @@ function prepararMenuPonto() {
   }
   SRV = criarServidor(criarDbSupabase(cfg.url, cfg.chave), { navegador: () => NAV });
   const prm = new URLSearchParams(location.search);
-  // computador do caixa: só a tela do QR Code do ponto (não precisa entrar)
-  if (prm.has('tela-ponto')) { iniciarTelaQr(); return; }
+  // endereço com ?tela-ponto: o QR Code fica aberto direto (não precisa entrar)
+  prepararBotaoPontoLogin();
+  if (prm.has('tela-ponto')) { abrirTelaQr(true); return; }
   // veio pela câmera do celular, lendo o QR do caixa: guarda o código e limpa o endereço
   if (prm.has('qr')) {
     try { sessionStorage.setItem('hm_qr', JSON.stringify({ qr: prm.get('qr'), em: Date.now() })); } catch (e) { /* sem armazenamento */ }
