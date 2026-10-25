@@ -445,6 +445,9 @@ body.modo-func .conteudo { margin-left: 0 !important; padding-bottom: 0; }
 .l-ponto-btn small { font-size: .8rem; font-weight: 600; opacity: .9; }
 .l-ou { display: flex; align-items: center; gap: 10px; color: var(--suave); font-size: .8rem; margin: 16px 0 2px; }
 .l-ou::before, .l-ou::after { content: ''; flex: 1; border-top: 1px solid var(--borda); }
+.pt-op { border: 1px solid var(--borda); border-radius: 12px; padding: 12px 14px; background: var(--sup2); }
+.pt-op p { margin: 4px 0 10px; }
+.pt-acoes { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex: none; }
 /* leitor de QR (celular da funcionária) */
 .scan-box { position: relative; border-radius: 16px; overflow: hidden; background: #000; aspect-ratio: 1 / 1; max-height: 62vh; margin: 6px auto 10px; }
 .scan-box video { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -854,7 +857,7 @@ body.modo-tela-qr #app, body.modo-tela-qr #tela-login { display: none !important
         <div>
           <div class="painel">
             <h3>📺 Computador do ponto</h3>
-            <p class="suave peq">No computador do restaurante, a funcionária clica em <b>⏱️ Bater ponto</b> na tela de entrada (sem entrar) e escaneia o QR Code com o celular, onde está logada. O QR muda a cada 10 minutos e depois de cada batida. Não depende de Wi-Fi nem de operadora. Só computadores autorizados aqui mostram o botão.</p>
+            <p class="suave peq">No computador do restaurante, a funcionária clica em <b>⏱️ Bater ponto</b> na tela de entrada (sem entrar) e escaneia o QR Code com o celular, onde está logada. O QR muda a cada 10 minutos e depois de cada batida. O botão só aparece nos computadores autorizados aqui: pelo atalho, no navegador autorizado, ou em qualquer navegador ligado na internet do restaurante.</p>
             <div id="pt-telas"></div>
             <div id="pt-tela-aqui" style="margin-top:12px"></div>
           </div>
@@ -3411,6 +3414,8 @@ module.exports = QRCode;
       async pontoBaterQr(d) { return db.rpc('ponto_bater_qr', { p_qr: String(d.qr || ''), p_nav: nav() }); },
       // tela do QR no caixa (funciona sem login)
       async pontoTela(d) { return db.rpc('ponto_tela', { p_token: String(d.token || '') }); },
+      async pontoTelaRede() { return db.rpc('ponto_tela_rede', {}); },
+      async pontoRedeOk() { return db.rpc('ponto_rede_ok', {}); },
       async pontoMeuPeriodo(d) { return db.rpc('ponto_meu_periodo', { p_inicio: d.inicio, p_fim: d.fim }); },
       async pontoPedirAjuste(d) {
         return db.rpc('ponto_pedir_ajuste', { p_dia: d.dia, p_tipo: d.tipo, p_entrada: d.entrada || '', p_saida: d.saida || '', p_motivo: d.motivo || '', p_nav: nav() });
@@ -3424,7 +3429,8 @@ module.exports = QRCode;
         return true;
       },
       async pontoSalvarConfig(d) { await db.rpc('ponto_salvar_config', { p: d, p_nav: nav() }); return true; },
-      async pontoTerminalCriar(d) { return db.rpc('ponto_terminal_criar', { p_nome: d.nome || '', p_nav: nav() }); },
+      async pontoTerminalCriar(d) { return db.rpc('ponto_terminal_criar', { p_nome: d.nome || '', p_este: !!d.este, p_nav: nav() }); },
+      async pontoTerminalAtalho(d) { return db.rpc('ponto_terminal_atalho', { p_id: Number(d.id), p_nav: nav() }); },
       async pontoTerminalTirar(d) { await db.rpc('ponto_terminal_tirar', { p_id: Number(d.id), p_nav: nav() }); return true; },
       async pontoFecharDia(d) { await db.rpc('ponto_fechar_dia', { p_dia: d.dia, p_titulo: d.titulo || '', p_aviso: d.aviso || '', p_fechar: d.fechar !== false, p_nav: nav() }); return true; },
       async pontoLiberarHoje(d) { await db.rpc('ponto_liberar_hoje', { p_liberar: !!d.liberar, p_nav: nav() }); return true; },
@@ -5819,34 +5825,104 @@ $('#pt-imprimir').onclick = () => abrirComprovanteSemanal(null, null);
 const TELA_QR_CHAVE = 'hm_tela_qr';
 function telaQrLocal() { try { return JSON.parse(localStorage.getItem(TELA_QR_CHAVE) || 'null'); } catch (e) { return null; } }
 function guardarTelaQr(v) { try { if (v) localStorage.setItem(TELA_QR_CHAVE, JSON.stringify(v)); else localStorage.removeItem(TELA_QR_CHAVE); } catch (e) { /* armazenamento indisponível */ } }
-/** Mostra (ou não) o botão "Bater ponto" na tela de entrada: só nos computadores autorizados */
-function prepararBotaoPontoLogin() { const el = $('#l-ponto'); if (el) el.classList.toggle('oculto', !telaQrLocal()); }
+/** Mostra (ou não) o botão "Bater ponto" na tela de entrada:
+ *  - navegador autorizado (ou aberto pelo atalho): sempre; e avisa o servidor da internet atual (aprende se ela mudou);
+ *  - qualquer outro navegador de computador: se estiver na internet de um computador autorizado. */
+let pontoPelaRede = false;
+const ehCelular = () => /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+async function prepararBotaoPontoLogin() {
+  const el = $('#l-ponto');
+  if (!el || !SRV) return;
+  const local = telaQrLocal();
+  if (local) {
+    el.classList.remove('oculto');
+    try {
+      const d = await SRV.executar('pontoTela', { token: local.token });
+      if (!d.ok) { guardarTelaQr(null); return prepararBotaoPontoLogin(); }
+      if (d.nome && d.nome !== local.nome) guardarTelaQr(Object.assign({}, local, { nome: d.nome }));
+    } catch (e) { /* sem internet agora: o botão continua */ }
+    return;
+  }
+  if (ehCelular()) { pontoPelaRede = false; el.classList.add('oculto'); return; }
+  try { const r = await SRV.executar('pontoRedeOk', {}); pontoPelaRede = !!(r && r.ok); } catch (e) { /* mantém como estava */ }
+  el.classList.toggle('oculto', !pontoPelaRede);
+}
+// confere de novo de vez em quando (a internet pode mudar com o computador ligado)
+setInterval(() => { if (!$('#tela-login').classList.contains('oculto')) prepararBotaoPontoLogin(); }, 15 * 60000);
+const linkAtalho = (t) => location.origin + location.pathname + '?ponto=' + t.id + '.' + t.token;
+/** Baixa o arquivo "Ponto Madora.url": dois cliques nele abrem o QR em qualquer navegador */
+function baixarAtalho(t) {
+  const link = linkAtalho(t);
+  const a = document.createElement('a');
+  a.href = window.URL.createObjectURL(new Blob(['[InternetShortcut]\r\nURL=' + link + '\r\n'], { type: 'application/octet-stream' }));
+  a.download = 'Ponto Madora' + (t.nome ? ' - ' + t.nome.replace(/[\\/:*?"<>|]/g, '') : '') + '.url';
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { window.URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+  modal(`<h2>⬇️ Atalho baixado</h2>
+    <p>O arquivo <b>${esc(a.download)}</b> está na pasta <b>Downloads</b>.</p>
+    <ol style="padding-left:20px;margin:0 0 10px">
+      <li>Leve o arquivo para o <b>computador do restaurante</b> (pen drive, e-mail, WhatsApp Web…) e coloque na <b>área de trabalho</b>.</li>
+      <li>Dê <b>dois cliques</b>: abre o QR Code do ponto, em qualquer navegador.</li>
+      <li>Na primeira vez, o sistema aprende a internet do restaurante. A partir daí, <b>qualquer navegador</b> desse computador mostra o botão <b>⏱️ Bater ponto</b> na tela de entrada.</li>
+    </ol>
+    <label class="rotulo" for="at-link">Ou copie o link (dá no mesmo):</label>
+    <div class="linha"><input class="campo" id="at-link" readonly value="${esc(link)}" style="flex:1"><button class="btn btn-claro btn-peq" id="at-copiar">Copiar</button></div>
+    <div class="aviso" style="margin-top:12px"><span>🔐 Não mande esse arquivo para as funcionárias: quem tiver ele consegue mostrar o QR em qualquer lugar. Se ele se perder, clique em <b>desautorizar</b> e crie outro.</span></div>
+    <div class="modal-acoes"><button class="btn btn-prim" data-a="n">Entendi</button></div>`, (m) => {
+    $('[data-a=n]', m).onclick = () => fecharModal(null);
+    $('#at-copiar', m).onclick = async () => { try { await navigator.clipboard.writeText(link); toast('Link copiado.', 'ok'); } catch (e) { $('#at-link', m).select(); } };
+  });
+}
 function desenharTelasQr() {
   const D = est.pt.dados;
   const lista = D.terminais || [];
+  const adm = !!D.souAdmin;
   let local = telaQrLocal();
   if (local && !lista.some((t) => t.id === local.id)) { guardarTelaQr(null); local = null; }   // foi desautorizado
-  $('#pt-telas').innerHTML = lista.length ? lista.map((t) => `<div class="cfg-l"><span><b>🖥️ ${esc(t.nome)}</b>${local && local.id === t.id ? ' <span class="selo cinza">este computador</span>' : ''}
-      <div class="suave peq">${t.online ? '<span class="pt-pos">● QR aberto agora</span>' : (t.vistoEm ? 'QR aberto pela última vez em ' + esc(dBR(t.vistoEm) + ' às ' + t.vistoEm.slice(11, 16)) : 'o QR ainda não foi aberto')} · autorizado por ${esc(t.criadoPor || '?')} em ${esc(dBR(t.criadoEm))}</div></span>
-      <button class="btn btn-texto btn-peq" data-tela-tirar="${t.id}">desautorizar</button></div>`).join('')
+  $('#pt-telas').innerHTML = lista.length ? lista.map((t) => `<div class="cfg-l"><span><b>🖥️ ${esc(t.nome)}</b>${local && local.id === t.id ? ' <span class="selo cinza">este navegador</span>' : ''}
+      <div class="suave peq">${t.online ? '<span class="pt-pos">● aberto agora</span>' : (t.vistoEm ? 'aberto pela última vez em ' + esc(dBR(t.vistoEm) + ' às ' + t.vistoEm.slice(11, 16)) : 'ainda não foi aberto')} · autorizado por ${esc(t.criadoPor || '?')} em ${esc(dBR(t.criadoEm))}</div>
+      <div class="suave peq">${t.redeAtiva ? `🌐 internet reconhecida: <b>${esc(t.ip)}</b> <span title="atualizada em ${esc(t.ipEm || '')}">(qualquer navegador nela mostra o botão)</span>` : '🌐 internet ainda não reconhecida: abra o atalho (ou o Hub) nesse computador uma vez'}</div></span>
+      ${adm ? `<span class="pt-acoes"><button class="btn btn-texto btn-peq" data-tela-atalho="${t.id}">baixar atalho</button><button class="btn btn-texto btn-peq" data-tela-tirar="${t.id}">desautorizar</button></span>` : ''}</div>`).join('')
     : '<p class="suave" style="margin:6px 0">Nenhum computador autorizado ainda. <b>Enquanto não tiver, ninguém consegue bater o ponto.</b></p>';
   $$('[data-tela-tirar]', $('#pt-telas')).forEach((b) => b.onclick = async () => {
-    if (!(await confirmar('Desautorizar este computador?', 'O botão “Bater ponto” some da tela de entrada dele e o QR Code para de funcionar na hora.', 'Desautorizar'))) return;
+    if (!(await confirmar('Desautorizar este computador?', 'O atalho dele para de funcionar, o botão “Bater ponto” some dos navegadores dele e da internet dele, e o QR Code deixa de valer na hora.', 'Desautorizar'))) return;
     try { await api('pontoTerminalTirar', { id: Number(b.dataset.telaTirar) }); toast('Computador desautorizado.', 'ok'); carregarPontoAdmin(true); } catch (e) { toast(e.message, 'erro'); }
   });
-  $('#pt-tela-aqui').innerHTML = local
-    ? `<div class="aviso-ok">✓ Este computador está autorizado (<b>${esc(local.nome)}</b>). A tela de entrada do Hub Madora aqui mostra o botão <b>⏱️ Bater ponto</b>.</div>
-       <div class="linha" style="margin-top:10px"><button class="btn btn-claro btn-peq" id="pt-tela-abrir">👁️ Ver o QR Code agora</button></div>`
-    : `<p class="suave peq" style="margin:0 0 8px"><b>No computador do restaurante</b>, entre aqui como administrador, dê um nome e clique em autorizar. Depois disso, a tela de entrada dele ganha o botão <b>⏱️ Bater ponto</b>, que mostra o QR sem precisar entrar.</p>
-       <div class="linha"><input class="campo" id="pt-tela-nome" style="flex:1;min-width:140px" maxlength="40" placeholder="Nome (ex.: Caixa)" value="${lista.length ? '' : 'Caixa'}"><button class="btn btn-prim btn-peq" id="pt-tela-nova">＋ Autorizar este computador</button></div>`;
+  $$('[data-tela-atalho]', $('#pt-telas')).forEach((b) => b.onclick = async () => {
+    try { baixarAtalho(await api('pontoTerminalAtalho', { id: Number(b.dataset.telaAtalho) })); } catch (e) { toast(e.message, 'erro'); }
+  });
+  if (!adm) { $('#pt-tela-aqui').innerHTML = '<p class="suave peq">Só o administrador autoriza computadores para o ponto.</p>'; return; }
+  $('#pt-tela-aqui').innerHTML = `
+    ${local ? `<div class="aviso-ok">✓ Este navegador está autorizado (<b>${esc(local.nome)}</b>): a tela de entrada mostra o botão <b>⏱️ Bater ponto</b>.</div>
+      <div class="linha" style="margin-top:8px"><button class="btn btn-claro btn-peq" id="pt-tela-abrir">👁️ Ver o QR Code agora</button></div>` : ''}
+    <div class="grade g2" style="gap:12px;margin-top:12px">
+      <div class="pt-op"><b>⬇️ Outro computador</b><p class="suave peq">Baixa um atalho para levar ao computador do restaurante. Dois cliques nele abrem o QR em qualquer navegador.</p>
+        <button class="btn btn-prim btn-peq" id="pt-atalho-novo">⬇️ Criar atalho</button></div>
+      <div class="pt-op"><b>💻 Este computador</b><p class="suave peq">Autoriza este navegador e a internet em que ele está agora.</p>
+        <button class="btn btn-claro btn-peq" id="pt-tela-nova" ${local ? 'disabled' : ''}>${local ? '✓ Já autorizado' : '＋ Autorizar este'}</button></div>
+    </div>`;
   if ($('#pt-tela-abrir')) $('#pt-tela-abrir').onclick = () => abrirTelaQr();
-  if ($('#pt-tela-nova')) $('#pt-tela-nova').onclick = async () => {
+  const pedirNome = (titulo, padrao) => new Promise((ok) => {
+    modal(`<h2>${titulo}</h2><label class="rotulo" for="tn-nome">Nome do computador</label>
+      <input class="campo" id="tn-nome" maxlength="40" value="${esc(padrao)}" autofocus><p class="msg-erro" id="tn-erro"></p>
+      <div class="modal-acoes"><button class="btn btn-claro" data-a="n">Cancelar</button><button class="btn btn-prim" data-a="s">Continuar</button></div>`, (m) => {
+      $('[data-a=n]', m).onclick = () => fecharModal(null);
+      $('[data-a=s]', m).onclick = () => { const v = $('#tn-nome', m).value.trim(); if (v.length < 2) { erroEm(m, '#tn-erro', 'Dê um nome (ex.: Caixa).'); return; } fecharModal(v); };
+    }).then(ok);
+  });
+  $('#pt-atalho-novo').onclick = async () => {
+    const nome = await pedirNome('⬇️ Atalho para outro computador', 'PC do restaurante');
+    if (!nome) return;
+    try { const t = await api('pontoTerminalCriar', { nome, este: false }); await carregarPontoAdmin(true); baixarAtalho(t); } catch (e) { toast(e.message, 'erro'); }
+  };
+  if (!local) $('#pt-tela-nova').onclick = async () => {
+    const nome = await pedirNome('💻 Autorizar este computador', lista.length ? 'Computador' : 'Caixa');
+    if (!nome) return;
     try {
-      const t = await api('pontoTerminalCriar', { nome: $('#pt-tela-nome').value });
+      const t = await api('pontoTerminalCriar', { nome, este: true });
       guardarTelaQr({ id: t.id, nome: t.nome, token: t.token });
-      prepararBotaoPontoLogin();
       await carregarPontoAdmin(true);
-      modal(`<h2>Computador autorizado ✓</h2><p>Agora, na <b>tela de entrada</b> do Hub Madora neste computador, aparece o botão <b>⏱️ Bater ponto</b>. A funcionária clica nele (sem entrar com usuário e senha), e o QR Code aparece para ela escanear com o celular.</p>
+      modal(`<h2>Computador autorizado ✓</h2><p>Agora, na <b>tela de entrada</b> do Hub Madora, aparece o botão <b>⏱️ Bater ponto</b>: neste navegador e em qualquer outro navegador ligado nesta mesma internet.</p>
         <p class="suave">Pode <b>sair da sua conta</b> aqui quando terminar: o botão continua funcionando, e ninguém vê o financeiro.</p>
         <div class="modal-acoes"><button class="btn btn-claro" data-a="n">Fechar</button><button class="btn btn-prim" data-a="s">👁️ Ver o QR Code</button></div>`, (m) => {
         $('[data-a=n]', m).onclick = () => fecharModal(null);
@@ -5874,21 +5950,23 @@ const fmtHoraTQ = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paul
 function tqErro(html) { const e = $('#tq-erro'); e.innerHTML = html; e.classList.toggle('oculto', !html); const v = $('#tq-erro [data-tq-voltar]'); if (v) v.onclick = fecharTelaQr; }
 async function atualizarTelaQr() {
   const local = telaQrLocal();
-  if (!local || !local.token) {
+  if (!local && !pontoPelaRede) {
     tqErro(`<div><div style="font-size:3rem">🔒</div><h2>Este computador não está autorizado para o ponto</h2>
-      <p>Para bater o ponto por aqui, o administrador precisa entrar no Hub Madora <b>neste computador</b> e ir em<br><b>⏱️ Ponto → 📺 Computador do ponto → ＋ Autorizar este computador</b>.</p>
+      <p>O administrador autoriza em <b>⏱️ Ponto → 📺 Computador do ponto</b> (neste computador, ou baixando um atalho para trazer até aqui).</p>
       <p><button class="btn btn-prim" data-tq-voltar>← Voltar</button></p></div>`);
     return;
   }
   let d;
-  try { d = await SRV.executar('pontoTela', { token: local.token }); tq.falhas = 0; } catch (e) {
+  try { d = await SRV.executar(local ? 'pontoTela' : 'pontoTelaRede', local ? { token: local.token } : {}); tq.falhas = 0; } catch (e) {
     tq.falhas++;
     if (tq.falhas >= 3) tqErro(`<div><div style="font-size:3rem">📡</div><h2>Sem conexão com a internet</h2><p>Tentando de novo sozinho… Assim que a internet voltar, o QR Code reaparece.</p><p><button class="btn btn-claro" data-tq-voltar>← Voltar</button></p></div>`);
     return;
   }
   if (!d.ok) {
-    guardarTelaQr(null); prepararBotaoPontoLogin();
-    tqErro(`<div><div style="font-size:3rem">🚫</div><h2>Este computador foi desautorizado</h2><p>Para voltar a bater o ponto por aqui, o administrador autoriza o computador de novo em <b>⏱️ Ponto → 📺 Computador do ponto</b>.</p><p><button class="btn btn-prim" data-tq-voltar>← Voltar</button></p></div>`);
+    if (local) guardarTelaQr(null); else pontoPelaRede = false;
+    prepararBotaoPontoLogin();
+    tqErro(local ? `<div><div style="font-size:3rem">🚫</div><h2>Este computador foi desautorizado</h2><p>Para voltar a bater o ponto por aqui, o administrador autoriza o computador de novo em <b>⏱️ Ponto → 📺 Computador do ponto</b>.</p><p><button class="btn btn-prim" data-tq-voltar>← Voltar</button></p></div>`
+      : `<div><div style="font-size:3rem">🌐</div><h2>Esta internet não é a do restaurante</h2><p>O botão de ponto só funciona no computador do restaurante (pelo atalho ou no navegador autorizado).</p><p><button class="btn btn-prim" data-tq-voltar>← Voltar</button></p></div>`);
     return;
   }
   tqErro('');
@@ -6090,8 +6168,14 @@ function prepararMenuPonto() {
   SRV = criarServidor(criarDbSupabase(cfg.url, cfg.chave), { navegador: () => NAV });
   const prm = new URLSearchParams(location.search);
   // endereço com ?tela-ponto: o QR Code fica aberto direto (não precisa entrar)
-  prepararBotaoPontoLogin();
-  if (prm.has('tela-ponto')) { abrirTelaQr(true); return; }
+  // atalho do ponto (baixado pelo administrador): guarda a chave neste navegador e já abre o QR
+  if (prm.has('ponto')) {
+    const m = String(prm.get('ponto') || '').match(/^(\d{1,12})\.([0-9a-f]{64})$/);
+    if (m) guardarTelaQr({ id: Number(m[1]), nome: (telaQrLocal() || {}).nome || '', token: m[2] });
+    history.replaceState(null, '', location.pathname);
+    if (m) abrirTelaQr();
+  }
+  if (prm.has('tela-ponto')) { history.replaceState(null, '', location.pathname); abrirTelaQr(true); }
   // veio pela câmera do celular, lendo o QR do caixa: guarda o código e limpa o endereço
   if (prm.has('qr')) {
     try { sessionStorage.setItem('hm_qr', JSON.stringify({ qr: prm.get('qr'), em: Date.now() })); } catch (e) { /* sem armazenamento */ }
